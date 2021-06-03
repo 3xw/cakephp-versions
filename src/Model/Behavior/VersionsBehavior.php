@@ -31,8 +31,8 @@ class VersionsBehavior extends Behavior
   protected $_defaultConfig = [
     'translate' => false,
     'retention' => [
-      'max_amount' => 10, // -1 => no limit
-      'max_periode' => '12 months', // -1 => no limit
+      'max_amount' => 10, // 0 => no limit
+      'max_period' => '24 months', // 0 => no limit
     ],
     'fields' => [],
     'version_field' => '_versions',
@@ -42,6 +42,48 @@ class VersionsBehavior extends Behavior
   {
     parent::initialize($config);
     $this->loadModel('Trois/Versions.Versions');
+  }
+
+  public function cleanVersions(): int
+  {
+    $total = 0;
+    $conditions = [
+      'model' => $this->table()->getAlias()
+    ];
+
+    if($period = $this->getConfig('retention.max_period'))
+    {
+      $total += $this->Versions->deleteAll(array_merge($conditions, ['created <' => (new \DateTime)->modify("-$period")->format('Y-m-d H:i:s')]));
+    }
+
+    if($amount = $this->getConfig('retention.max_amount'))
+    {
+      $query = $this->Versions->find();
+      $targets = $query->select([
+        'foreign_key', 'locale','model','total_items' => $query->func()->count('foreign_key')
+      ])
+      ->group(['foreign_key','locale'])
+      ->having(['COUNT(foreign_key) >' => $amount])
+      ->enableAutoFields(false)
+      ->toArray();
+
+      foreach($targets  as $t)
+      {
+        $list = $this->Versions->find('list')
+        ->where([
+          'foreign_key' => $t->foreign_key,
+          'locale' => $t->locale,
+          'model' => $t->model,
+        ])
+        ->order(['created' => 'DESC'])
+        ->limit(1000)
+        ->offset($amount)
+        ->toArray();
+
+        $total += $this->Versions->deleteAll(['id IN' => array_keys($list)]);
+      }
+    }
+    return $total;
   }
 
   public function findVersions(Query $query, array $options)
@@ -64,8 +106,8 @@ class VersionsBehavior extends Behavior
     });
 
     // options amount
-    if(!empty($options['periode']) && $periode = $options['periode']) $query->matching('Versions', function ($q) use($periode) {
-      return $q->where(['Versions.created >=' => (new \DateTime)->modify("-$periode")->format('Y-m-d H:i:s')]);
+    if(!empty($options['period']) && $period = $options['period']) $query->matching('Versions', function ($q) use($period) {
+      return $q->where(['Versions.created >=' => (new \DateTime)->modify("-$period")->format('Y-m-d H:i:s')]);
     });
 
     $query->mapReduce(
