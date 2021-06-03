@@ -15,6 +15,8 @@ use Cake\Datasource\ModelAwareTrait;
 use Cake\Routing\Router;
 use Cake\Utility\Hash;
 
+use Trois\Versions\Model\Entity\EntityVersion;
+
 /**
 * Versions behavior
 */
@@ -112,7 +114,9 @@ class VersionsBehavior extends Behavior
 
     $query->mapReduce(
       function ($entity, $key, $mr) use ($prop){
-        $this->attachVersions($entity, $entity->{$prop});
+        $versions = $entity->{$prop};
+        $entity->unset($prop);
+        $this->attachVersions($entity, $versions);
         $mr->emitIntermediate($entity, $key);
       },
       function ($entities, $key, $mr) { $mr->emit($entities[0], $key); }
@@ -162,26 +166,34 @@ class VersionsBehavior extends Behavior
     $structuredVersions = $this->toStructVersionsArray($versions);
     foreach($structuredVersions as $datetime => &$localesArray)
     {
-      foreach($localesArray as $locale => &$verionFiledsArray)
+      // create entity from current entity state
+      $e = $this->table()->newEntity($entity->toArray());
+
+      // modify entity with version state
+      foreach($localesArray[Configure::read('App.defaultLocale')] as $vf) $e->set($vf->field, $vf->content);
+
+      // create EntityVersion
+      $entityVersion = new EntityVersion([
+        'id' => $vf->version_id,
+        'created' => $vf->created,
+        'owned_by' => $vf->user?? $vf->user_id,
+        'entity' => $e
+      ]);
+
+      // clean first set
+      unset($localesArray[Configure::read('App.defaultLocale')]);
+
+      // i18n
+      $trans = $e->get('_translations');
+      if(is_array($trans))
       {
-        // create entioty from current entity state
-        $data = $entity->toArray();
-        if(!empty($data['_translations'])) unset($data['_translations']);
-        $ve = $this->table()->newEntity($data);
-
-        // merge with current state locale
-        $trans = $entity->get('_translations');
-        if( is_array($trans) && Hash::check($trans, $locale)) $ve = $this->table()->patchEntity($ve, $trans[$locale]->toArray());
-
-        // modify entity with version state
-        foreach($verionFiledsArray as $vf) $ve->set($vf->field, $vf->content);
-
-        // set version owner ship
-        $ve->set('owned_by', $vf->user?? $vf->user_id);
-
-        // set entity
-        $verionFiledsArray = $ve;
+        foreach($localesArray as $locale => $verionFiledsArray)
+        {
+          foreach($verionFiledsArray as $vf) $trans[$locale]->set($vf->field, $vf->content);
+        }
       }
+
+      $localesArray = $entityVersion;
     }
 
     $entity->set($this->getConfig('version_field'), $structuredVersions);
