@@ -14,6 +14,7 @@ use Cake\Utility\Text;
 use Cake\Datasource\ModelAwareTrait;
 use Cake\Routing\Router;
 use Cake\Utility\Hash;
+use Cake\Http\Exception\NotFoundException;
 
 use Trois\Versions\Model\Entity\EntityVersion;
 
@@ -44,6 +45,23 @@ class VersionsBehavior extends Behavior
   {
     parent::initialize($config);
     $this->loadModel('Trois/Versions.Versions');
+  }
+
+  public function revertFromVersion($versionId, $entity = null)
+  {
+    if(!$versions = $this->Versions->findByVersionId($versionId)->toArray()) throw new NotFoundException('Version not found');
+
+    // get related entity if not given
+    $entity = $entity?? $this->table()->get($versions[0]->foreign_key);
+
+    // attach version
+    $entity->unset($this->getConfig('version_field'));
+    $this->attachVersions($entity, $versions);
+
+    // save revision
+    $revision = array_shift($entity->{$this->getConfig('version_field')});
+    $entity = $this->table()->patchEntity($entity, $revision->entity->toArray());
+    return $this->table()->save($entity);
   }
 
   public function cleanVersions(): int
@@ -90,7 +108,7 @@ class VersionsBehavior extends Behavior
 
   public function findVersions(Query $query, array $options)
   {
-    $prop = $this->getConfig('version_field');
+    $prop = '_versions_tmp';
 
     // link models
     $this->table()->hasMany('Versions', [
@@ -164,7 +182,8 @@ class VersionsBehavior extends Behavior
   protected function attachVersions(EntityInterface $entity, $versions)
   {
     $structuredVersions = $this->toStructVersionsArray($versions);
-    foreach($structuredVersions as $datetime => &$localesArray)
+    $versions = [];
+    foreach($structuredVersions as $datetime => $localesArray)
     {
       // create entity from current entity state
       $e = $this->table()->newEntity($entity->toArray());
@@ -193,10 +212,10 @@ class VersionsBehavior extends Behavior
       }
       $e->set('_translations', $trans);
 
-      $localesArray = $entityVersion;
+      $versions[] = $entityVersion;
     }
 
-    $entity->set($this->getConfig('version_field'), $structuredVersions);
+    $entity->set($this->getConfig('version_field'), $versions);
   }
 
   protected function toStructVersionsArray(array $versions)
