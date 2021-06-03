@@ -184,14 +184,14 @@ class VersionsBehavior extends Behavior
       unset($localesArray[Configure::read('App.defaultLocale')]);
 
       // i18n
-      $trans = $e->get('_translations');
-      if(is_array($trans))
+      $eI18n = $this->table()->newEntity($e->toArray());
+      $trans = [];
+      foreach($localesArray as $locale => $verionFiledsArray)
       {
-        foreach($localesArray as $locale => $verionFiledsArray)
-        {
-          foreach($verionFiledsArray as $vf) $trans[$locale]->set($vf->field, $vf->content);
-        }
+        $trans[$locale] = $this->table()->newEntity($eI18n->toArray());
+        foreach($verionFiledsArray as $vf) $trans[$locale]->set($vf->field, $vf->content);
       }
+      $e->set('_translations', $trans);
 
       $localesArray = $entityVersion;
     }
