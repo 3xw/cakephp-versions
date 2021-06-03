@@ -7,6 +7,7 @@ use Cake\Event\Event;
 use Cake\Datasource\EntityInterface;
 use Cake\ORM\Behavior;
 use Cake\ORM\Table;
+use Cake\ORM\Query;
 use Cake\I18n\I18n;
 use Cake\Core\Configure;
 use Cake\Utility\Text;
@@ -41,6 +42,41 @@ class VersionsBehavior extends Behavior
   {
     parent::initialize($config);
     $this->loadModel('Trois/Versions.Versions');
+  }
+
+  public function findVersions(Query $query, array $options)
+  {
+    $prop = $this->getConfig('version_field');
+
+    // link models
+    $this->table()->hasMany('Versions', [
+      'className' => 'Trois/Versions.Versions',
+      'foreignKey' => 'foreign_key',
+      'conditions' => ['Versions.model' => $this->table()->getAlias()],
+      'propertyName' => $prop,
+      'sort' => ['Versions.created' => 'DESC']
+    ]);
+    $query->contain(['Versions']);
+
+    // options amount
+    if(!empty($options['amount']) && $amount = $options['amount']) $query->matching('Versions', function ($q) use($amount) {
+      return $q->limit($amount);
+    });
+
+    // options amount
+    if(!empty($options['periode']) && $periode = $options['periode']) $query->matching('Versions', function ($q) use($periode) {
+      return $q->where(['Versions.created >=' => (new \DateTime)->modify("-$periode")->format('Y-m-d H:i:s')]);
+    });
+
+    $query->mapReduce(
+      function ($entity, $key, $mr) use ($prop){
+        $this->attachVersions($entity, $entity->{$prop});
+        $mr->emitIntermediate($entity, $key);
+      },
+      function ($entities, $key, $mr) { $mr->emit($entities[0], $key); }
+    );
+
+    return $query;
   }
 
   public function afterSave(Event $event, EntityInterface $entity, ArrayObject $options)

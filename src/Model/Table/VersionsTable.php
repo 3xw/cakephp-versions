@@ -61,7 +61,6 @@ class VersionsTable extends Table
 
     $this->belongsTo('Users', [
       'foreignKey' => 'user_id',
-      'className' => 'Trois/Versions.Users',
       'type' => 'LEFT'
     ]);
   }
