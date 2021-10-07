@@ -133,14 +133,22 @@ class VersionsBehavior extends Behavior
     // options withUser
     if(!empty($options['withUser']) && $options['withUser']) $query->contain(['Versions' => ['Users']]);
 
+    $pKey = $this->table()->getPrimaryKey();
     $query->mapReduce(
-      function ($entity, $key, $mr) use ($prop){
-        $versions = $entity->{$prop};
-        $entity->unset($prop);
-        $this->attachVersions($entity, $versions);
-        $mr->emitIntermediate($entity, $key);
+      function ($entity, $key, $mr) use ($pKey)
+      {
+        $mr->emitIntermediate($entity, $entity->{$pKey});
       },
-      function ($entities, $key, $mr) { $mr->emit($entities[0], $key); }
+      function ($entities, $key, $mr) use ($prop)
+      {
+        $entity = $entities[0];
+        foreach($entities as $e)
+        {
+          $versions = $e->{$prop};
+          $this->attachVersions($entity, $versions);
+        }
+        $mr->emit($entity, $key);
+      }
     );
 
     return $query;
