@@ -125,10 +125,13 @@ class VersionsBehavior extends Behavior
       return $q->limit($amount);
     });
 
-    // options amount
+    // options period
     if(!empty($options['period']) && $period = $options['period']) $query->matching('Versions', function ($q) use($period) {
       return $q->where(['Versions.created >=' => (new \DateTime)->modify("-$period")->format('Y-m-d H:i:s')]);
     });
+
+    // options withUser
+    if(!empty($options['withUser']) && $options['withUser']) $query->contain(['Versions' => ['Users']]);
 
     $query->mapReduce(
       function ($entity, $key, $mr) use ($prop){
