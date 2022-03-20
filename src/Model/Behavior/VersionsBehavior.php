@@ -38,7 +38,8 @@ class VersionsBehavior extends Behavior
       'max_period' => '24 months', // 0 => no limit
     ],
     'fields' => [],
-    'version_field' => '_versions',
+    'version_field' => 'versions',
+    'allowEmptyUser' => false,
   ];
 
   public function initialize(array $config): void
@@ -100,7 +101,7 @@ class VersionsBehavior extends Behavior
         ->offset($amount)
         ->toArray();
 
-        $total += $this->Versions->deleteAll(['id IN' => array_keys($list)]);
+        if(!empty($list)) $total += $this->Versions->deleteAll(['id IN' => array_keys($list)]);
       }
     }
     return $total;
@@ -108,22 +109,15 @@ class VersionsBehavior extends Behavior
 
   public function findVersions(Query $query, array $options)
   {
-    $prop = '_versions_tmp';
-
     // link models
     $this->table()->hasMany('Versions', [
       'className' => 'Trois/Versions.Versions',
       'foreignKey' => 'foreign_key',
       'conditions' => ['Versions.model' => $this->table()->getAlias()],
-      'propertyName' => $prop,
+      'propertyName' => $this->getConfig('version_field'),
       'sort' => ['Versions.created' => 'DESC']
     ]);
     $query->contain(['Versions']);
-
-    // options amount
-    if(!empty($options['amount']) && $amount = $options['amount']) $query->matching('Versions', function ($q) use($amount) {
-      return $q->limit($amount);
-    });
 
     // options period
     if(!empty($options['period']) && $period = $options['period']) $query->matching('Versions', function ($q) use($period) {
@@ -133,25 +127,23 @@ class VersionsBehavior extends Behavior
     // options withUser
     if(!empty($options['withUser']) && $options['withUser']) $query->contain(['Versions' => ['Users']]);
 
-    $pKey = $this->table()->getPrimaryKey();
-    $query->mapReduce(
-      function ($entity, $key, $mr) use ($pKey)
-      {
-        $mr->emitIntermediate($entity, $entity->{$pKey});
-      },
-      function ($entities, $key, $mr) use ($prop)
-      {
-        $entity = $entities[0];
-        foreach($entities as $e)
-        {
-          $versions = $e->{$prop};
-          $this->attachVersions($entity, $versions);
-        }
-        $mr->emit($entity, $key);
-      }
-    );
-
     return $query;
+  }
+
+  public function beforeSave(Event $event, EntityInterface $entity, ArrayObject $options)
+  {
+    // try save version of each fields
+    if(!$this->getConfig('allowEmptyUser') && $this->tryGetUserId() === null )
+    {
+      $entity->setError($this->getConfig('version_field'), ['No user found: error thrown as allowEmptyUser id disabled']);
+      $event->stopPropagation();
+      return false;
+    }
+
+    // attach current version
+    $this->attachVersions($entity, $versions);
+
+    return $entity;
   }
 
   public function afterSave(Event $event, EntityInterface $entity, ArrayObject $options)
