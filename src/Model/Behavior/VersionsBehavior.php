@@ -140,9 +140,6 @@ class VersionsBehavior extends Behavior
       return false;
     }
 
-    // attach current version
-    $this->attachVersions($entity, $versions);
-
     return $entity;
   }
 
